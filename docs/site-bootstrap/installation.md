@@ -62,7 +62,14 @@ keeps that address for the life of its sandbox. Observed on a real site
 bring-up: a node-local-dns pod pinned to `10.4.0.2`, four seconds before
 ovn-kubernetes wrote `10-ovn-kubernetes.conf`.
 
-Point nerdctl at its own directory before the first bootstrap:
+When run as root, `nvkectl bootstrap site` sets `NETCONFPATH` to
+`/etc/containerd-nerdctl/net.d` for the kind commands it runs, unless
+`NETCONFPATH` is already set. It cannot move configs that are already there, so
+it stops before creating anything if `/etc/cni/net.d` holds a `nerdctl-*.conflist`.
+Remove those files as described below, then re-run.
+
+To keep every nerdctl command out of the shared directory, not just the ones
+`nvkectl` runs, point nerdctl at its own directory before the first bootstrap:
 
 ```toml
 # /etc/nerdctl/nerdctl.toml

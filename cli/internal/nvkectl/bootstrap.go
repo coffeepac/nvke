@@ -339,6 +339,9 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	if err := requireContainerRuntime(opts.lookPath); err != nil {
 		return err
 	}
+	if err := requireIsolatedRuntimeCNI(sharedCNIConfDir); err != nil {
+		return err
+	}
 
 	// Step 2: stand up the ephemeral bootstrap Kind cluster the controller will run on.
 	// It is normally torn down on exit. After site-cluster creation starts, a
@@ -1274,6 +1277,35 @@ func requireContainerRuntime(lookPath func(string) (string, error)) error {
 			bootstrapengine.RuntimeCLI, err)
 	}
 	return nil
+}
+
+// sharedCNIConfDir is the directory requireIsolatedRuntimeCNI inspects. A
+// variable so tests do not read the machine running them.
+var sharedCNIConfDir = bootstrapengine.SharedCNIConfDir
+
+// requireIsolatedRuntimeCNI fails when the container runtime has already written
+// network configs into dir, the node containerd's CNI directory.
+//
+// The bootstrap runs on the node that becomes the site. A runtime config left in
+// dir is the only CNI config there between kubeadm init and the CNI plugin
+// writing its own, so the first pods, CoreDNS among them, are sandboxed on the
+// runtime's bridge and keep an address no pod on the cluster network can reach.
+// The bootstrap now writes new configs elsewhere, but cannot move these.
+func requireIsolatedRuntimeCNI(dir string) error {
+	found, err := bootstrapengine.NerdctlCNIConfigs(dir)
+	if err != nil {
+		return err
+	}
+	if len(found) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%s already holds %s network config(s) in %s, the directory this node's own containerd reads for pod networking:\n  %s\n"+
+		"Left there, they are the only CNI config on the node until the cluster's CNI plugin writes its own, so the first pods "+
+		"(CoreDNS, node-local-dns) get addresses on the bootstrap bridge and cluster DNS never works.\n"+
+		"Remove those files and delete any bridge interface still holding an address from their subnets, then re-run. "+
+		"To keep %s out of that directory for good, set `cni_netconfpath = %q` in /etc/nerdctl/nerdctl.toml",
+		bootstrapengine.RuntimeCLI, bootstrapengine.RuntimeCLI, dir, strings.Join(found, "\n  "),
+		bootstrapengine.RuntimeCLI, bootstrapengine.IsolatedCNIConfDir)
 }
 
 // ensureImageAvailable makes sure image is present in containerd's image

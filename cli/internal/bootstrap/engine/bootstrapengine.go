@@ -47,6 +47,18 @@ const (
 	// out to for the image operations kind does not cover.
 	RuntimeCLI = "nerdctl"
 
+	// netconfPathEnv is the environment form of nerdctl's --cni-netconfpath:
+	// the directory nerdctl writes its network configs to.
+	netconfPathEnv = "NETCONFPATH"
+
+	// SharedCNIConfDir is the CNI configuration directory the node's own
+	// containerd reads, and so the one the bootstrap runtime must not write to.
+	SharedCNIConfDir = "/etc/cni/net.d"
+
+	// IsolatedCNIConfDir is where the bootstrap runtime's network configs go
+	// instead of SharedCNIConfDir.
+	IsolatedCNIConfDir = "/etc/containerd-nerdctl/net.d"
+
 	// createCleanupTimeout bounds each of the diagnostics and the teardown that follow a
 	// failed create. They run on a context detached from the caller's, so they
 	// need a stop of their own.
@@ -60,8 +72,35 @@ const (
 // CommandRunner interface, whose implementations include test fakes and
 // could include anything. One that annotated the map it was handed would
 // otherwise corrupt every later invocation in the process.
+//
+// It also moves nerdctl's network configs out of SharedCNIConfDir, which is the
+// node containerd's own conf_dir. Left there, the bootstrap bridge is the only
+// CNI config on the node between kubeadm init and the CNI plugin writing its
+// own, so the first pods are sandboxed on the bootstrap bridge and keep that
+// address: CoreDNS then answers on a network the cluster's pods cannot reach.
 func kindEnv() map[string]string {
-	return map[string]string{kindExperimentalProviderEnv: RuntimeCLI}
+	return kindEnvAs(os.Geteuid(), os.Getenv(netconfPathEnv))
+}
+
+// kindEnvAs is kindEnv for a given effective user and NETCONFPATH. An operator's
+// NETCONFPATH wins, and rootless nerdctl keeps its own per-user directory, which
+// never reaches the node containerd.
+func kindEnvAs(euid int, netconfPath string) map[string]string {
+	env := map[string]string{kindExperimentalProviderEnv: RuntimeCLI}
+	if euid == 0 && netconfPath == "" {
+		env[netconfPathEnv] = IsolatedCNIConfDir
+	}
+	return env
+}
+
+// NerdctlCNIConfigs returns the nerdctl network configs in dir, in name order.
+// A missing directory has none.
+func NerdctlCNIConfigs(dir string) ([]string, error) {
+	paths, err := filepath.Glob(filepath.Join(dir, "nerdctl-*.conflist"))
+	if err != nil {
+		return nil, fmt.Errorf("listing nerdctl CNI configs in %s: %w", dir, err)
+	}
+	return paths, nil
 }
 
 // Mount is an extra bind mount into every cluster node container, for e.g.
