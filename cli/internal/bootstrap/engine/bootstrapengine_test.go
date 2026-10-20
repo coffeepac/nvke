@@ -490,6 +490,11 @@ func TestKindEnvAs_IsolatesTheRuntimeCNIConfig(t *testing.T) {
 			netconfPath: "/srv/cni",
 			want:        map[string]string{kindExperimentalProviderEnv: "nerdctl"},
 		},
+		"the shared directory is replaced, however it is spelled": {
+			euid:        0,
+			netconfPath: "/etc/cni/net.d/",
+			want:        map[string]string{kindExperimentalProviderEnv: "nerdctl", netconfPathEnv: IsolatedCNIConfDir},
+		},
 		"rootless keeps its per-user directory": {
 			euid: 1000,
 			want: map[string]string{kindExperimentalProviderEnv: "nerdctl"},
@@ -528,5 +533,12 @@ func TestNerdctlCNIConfigs(t *testing.T) {
 
 	if got, err := NerdctlCNIConfigs(filepath.Join(dir, "missing")); err != nil || len(got) != 0 {
 		t.Errorf("a missing directory = %v, %v; want none and no error", got, err)
+	}
+
+	// A parent that is a file fails with ENOTDIR whoever runs the test, which a
+	// chmod 000 directory would not for root.
+	file := filepath.Join(dir, "10-ovn-kubernetes.conf")
+	if _, err := NerdctlCNIConfigs(filepath.Join(file, "net.d")); err == nil {
+		t.Error("an unreadable directory must be an error, not an empty one")
 	}
 }

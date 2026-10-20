@@ -23,7 +23,9 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -83,10 +85,14 @@ func kindEnv() map[string]string {
 }
 
 // kindEnvAs is kindEnv for a given effective user and NETCONFPATH. An operator's
-// NETCONFPATH wins, and rootless nerdctl keeps its own per-user directory, which
-// never reaches the node containerd.
+// NETCONFPATH wins unless it names SharedCNIConfDir, which is the directory this
+// exists to avoid and is replaced like an unset value. Rootless nerdctl keeps its
+// own per-user directory, which never reaches the node containerd.
 func kindEnvAs(euid int, netconfPath string) map[string]string {
 	env := map[string]string{kindExperimentalProviderEnv: RuntimeCLI}
+	if netconfPath != "" && filepath.Clean(netconfPath) == SharedCNIConfDir {
+		netconfPath = ""
+	}
 	if euid == 0 && netconfPath == "" {
 		env[netconfPathEnv] = IsolatedCNIConfDir
 	}
@@ -94,11 +100,21 @@ func kindEnvAs(euid int, netconfPath string) map[string]string {
 }
 
 // NerdctlCNIConfigs returns the nerdctl network configs in dir, in name order.
-// A missing directory has none.
+// A missing directory has none; any other failure to read it is an error, since
+// an unreadable directory has not been shown to be clear.
 func NerdctlCNIConfigs(dir string) ([]string, error) {
-	paths, err := filepath.Glob(filepath.Join(dir, "nerdctl-*.conflist"))
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("listing nerdctl CNI configs in %s: %w", dir, err)
+	}
+	var paths []string
+	for _, entry := range entries {
+		if ok, _ := filepath.Match("nerdctl-*.conflist", entry.Name()); ok {
+			paths = append(paths, filepath.Join(dir, entry.Name()))
+		}
 	}
 	return paths, nil
 }
