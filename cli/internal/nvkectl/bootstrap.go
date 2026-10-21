@@ -339,9 +339,6 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 	if err := requireContainerRuntime(opts.lookPath); err != nil {
 		return err
 	}
-	if err := requireIsolatedRuntimeCNI(sharedCNIConfDir); err != nil {
-		return err
-	}
 
 	// Step 2: stand up the ephemeral bootstrap Kind cluster the controller will run on.
 	// It is normally torn down on exit. After site-cluster creation starts, a
@@ -380,6 +377,12 @@ func runBootstrapSite(ctx context.Context, out io.Writer, opts *bootstrapSiteOpt
 		releaseSteps = nicoReleaseSteps(inv.ClusterName, cfg.ClusterName, "<its kubeconfig file>", cweCfg.CWEPort)
 	}
 	if err := requireNoBootstrapCluster(ctx, engine, cfg.ClusterName, releaseSteps); err != nil {
+		return err
+	}
+	// After the check above: a retained bootstrap cluster owns the runtime's
+	// bridge config, and its own message says how to recover it before anything
+	// is deleted. Bridge-removal advice here would pre-empt that.
+	if err := requireIsolatedRuntimeCNI(sharedCNIConfDir); err != nil {
 		return err
 	}
 	// A key file already at the output path belongs to an earlier bootstrap of
