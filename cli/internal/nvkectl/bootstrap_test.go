@@ -2509,7 +2509,10 @@ func TestRequireIsolatedRuntimeCNI(t *testing.T) {
 	if err == nil {
 		t.Fatal("a nerdctl config in the node's CNI directory should fail the preflight")
 	}
-	for _, want := range []string{stale, "CoreDNS", "cni_netconfpath", bootstrapengine.IsolatedCNIConfDir} {
+	if !strings.HasPrefix(err.Error(), dir+" already holds nerdctl network config(s)") {
+		t.Errorf("error should start with the directory that holds the configs, got:\n%v", err)
+	}
+	for _, want := range []string{stale, "CoreDNS", `grep -h '"bridge":' ` + dir + "/nerdctl-*.conflist", "ip link delete", "cni_netconfpath", bootstrapengine.IsolatedCNIConfDir} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error should mention %q, got:\n%v", want, err)
 		}

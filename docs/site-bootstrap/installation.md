@@ -64,9 +64,10 @@ ovn-kubernetes wrote `10-ovn-kubernetes.conf`.
 
 When run as root, `nvkectl bootstrap site` sets `NETCONFPATH` to
 `/etc/containerd-nerdctl/net.d` for the kind commands it runs, unless
-`NETCONFPATH` is already set. It cannot move configs that are already there, so
-it stops before creating anything if `/etc/cni/net.d` holds a `nerdctl-*.conflist`.
-Remove those files as described below, then re-run.
+`NETCONFPATH` already names another directory. It cannot move configs that are
+already there, so it stops before creating anything if `/etc/cni/net.d` holds a
+`nerdctl-*.conflist`. Remove those files and their bridges as described below,
+then re-run.
 
 To keep every nerdctl command out of the shared directory, not just the ones
 `nvkectl` runs, point nerdctl at its own directory before the first bootstrap:
@@ -79,11 +80,36 @@ cni_netconfpath = "/etc/containerd-nerdctl/net.d"
 nerdctl creates the directory itself, and kind's nerdctl provider shells out
 to nerdctl, so the setting needs no extra flags.
 
-If an earlier bootstrap already wrote conflists into `/etc/cni/net.d`, remove
-the `nerdctl-*.conflist` files **and** delete any bridge interface still
-holding an address from their subnets before retrying. A live address without
-a matching conflist in the directory nerdctl reads fails the next network
-creation with `subnet ... overlaps with other one on this address space`.
+If nerdctl already wrote conflists into `/etc/cni/net.d`, remove the
+`nerdctl-*.conflist` files **and** the bridge interfaces they created before
+retrying. A bridge that keeps its address without a matching conflist in the
+directory nerdctl reads fails the next network creation with
+`subnet ... overlaps with other one on this address space`.
+
+1. List the bridge each file names. Do this first: once a file is gone,
+   nothing records which bridge it created.
+
+   ```bash
+   grep -h '"bridge":' /etc/cni/net.d/nerdctl-*.conflist
+   ```
+
+   nerdctl's default network uses `nerdctl0`; every other network uses `br-`
+   followed by the start of its network ID.
+
+2. Remove the files.
+
+   ```bash
+   rm /etc/cni/net.d/nerdctl-*.conflist
+   ```
+
+3. Delete each bridge from step 1.
+
+   ```bash
+   ip link delete <BRIDGE>
+   ```
+
+   `<BRIDGE>` is a name from step 1. A bridge that is already gone reports
+   `Cannot find device`.
 
 ## Next Steps
 

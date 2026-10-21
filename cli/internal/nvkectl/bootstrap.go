@@ -1302,12 +1302,13 @@ func requireIsolatedRuntimeCNI(dir string) error {
 	if len(found) == 0 {
 		return nil
 	}
-	return fmt.Errorf("%s already holds %s network config(s) in %s, the directory this node's own containerd reads for pod networking:\n  %s\n"+
+	return fmt.Errorf("%s already holds %s network config(s), and this node's own containerd reads that directory for pod networking:\n  %s\n"+
 		"Left there, they are the only CNI config on the node until the cluster's CNI plugin writes its own, so the first pods "+
 		"(CoreDNS, node-local-dns) get addresses on the bootstrap bridge and cluster DNS never works.\n"+
-		"Remove those files and delete any bridge interface still holding an address from their subnets, then re-run. "+
+		"List the bridge each file names with `grep -h '\"bridge\":' %s/nerdctl-*.conflist` before removing the files, "+
+		"then delete each of those bridges with `ip link delete <bridge>` and re-run. "+
 		"To keep %s out of that directory for good, set `cni_netconfpath = %q` in /etc/nerdctl/nerdctl.toml",
-		bootstrapengine.RuntimeCLI, bootstrapengine.RuntimeCLI, dir, strings.Join(found, "\n  "),
+		dir, bootstrapengine.RuntimeCLI, strings.Join(found, "\n  "), dir,
 		bootstrapengine.RuntimeCLI, bootstrapengine.IsolatedCNIConfDir)
 }
 
